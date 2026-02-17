@@ -155,3 +155,74 @@ export const reviewWork = async (req, res) => {
     res.status(500).json({ message: "Review error" });
   }
 };
+/* =========================
+   TEAM LEAD ANALYTICS DASHBOARD
+========================= */
+export const getTeamLeadDashboard = async (req, res) => {
+  try {
+    if (req.user.role !== "TEAM_LEAD") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    /* -------- PENDING REVIEWS -------- */
+    const pendingReviewsQuery = pool.query(`
+      SELECT COUNT(*) 
+      FROM submissions s
+      JOIN projects p ON s.project_id = p.id
+      WHERE p.team_lead_id = $1
+      AND s.status = 'Pending'
+    `, [req.user.id]);
+
+    /* -------- MISSED DEADLINES -------- */
+    const missedDeadlinesQuery = pool.query(`
+      SELECT COUNT(*)
+      FROM projects
+      WHERE team_lead_id = $1
+      AND deadline < CURRENT_DATE
+      AND status = 'Ongoing'
+    `, [req.user.id]);
+
+    /* -------- INTERN PERFORMANCE -------- */
+    const internPerformanceQuery = pool.query(`
+      SELECT 
+        u.id,
+        u.name AS intern,
+        COUNT(s.id) AS totalSubmissions,
+        COUNT(s.id) FILTER (WHERE s.status='Approved') AS approved,
+        CASE 
+          WHEN COUNT(s.id)=0 THEN 0
+          ELSE ROUND(
+            (COUNT(s.id) FILTER (WHERE s.status='Approved')::decimal 
+            / COUNT(s.id)) * 100
+          )
+        END AS progressPercentage
+      FROM users u
+      LEFT JOIN projects p ON p.intern_id = u.id
+      LEFT JOIN submissions s ON s.project_id = p.id
+      WHERE p.team_lead_id = $1
+      AND u.role='INTERN'
+      GROUP BY u.id
+      ORDER BY progressPercentage DESC
+    `, [req.user.id]);
+
+    const [
+      pendingReviews,
+      missedDeadlines,
+      internPerformance
+    ] = await Promise.all([
+      pendingReviewsQuery,
+      missedDeadlinesQuery,
+      internPerformanceQuery
+    ]);
+
+    res.json({
+      pendingReviews: parseInt(pendingReviews.rows[0].count),
+      missedDeadlines: parseInt(missedDeadlines.rows[0].count),
+      internPerformance: internPerformance.rows
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Team Lead Dashboard error" });
+  }
+};

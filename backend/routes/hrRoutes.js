@@ -4,13 +4,13 @@ import auth from "../middleware/authMiddleware.js";
 import {
   createIntern,
   assignIntern,
-  getAnalytics
+  getHRAnalyticsDashboard,
 } from "../controllers/hrController.js";
 
 const router = express.Router();
 
 router.post("/create-intern", auth, createIntern);
 router.put("/assign-intern", auth, assignIntern);
-router.get("/analytics", auth, getAnalytics);
+router.get("/analytics-dashboard", auth, getHRAnalyticsDashboard);
 
 export default router;

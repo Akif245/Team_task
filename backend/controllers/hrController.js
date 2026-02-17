@@ -97,59 +97,107 @@ export const assignIntern = async (req, res) => {
 };
 
 /* =========================
-   HR ANALYTICS
+   HR ANALYTICS + DASHBOARD
 ========================= */
-export const getAnalytics = async (req, res) => {
+export const getHRAnalyticsDashboard = async (req, res) => {
   try {
     if (req.user.role !== "HR") {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const totalInterns = await pool.query(
+    /* -------- TOTAL INTERNS -------- */
+    const totalInternsQuery = pool.query(
       "SELECT COUNT(*) FROM users WHERE role='INTERN'"
     );
 
-    const internsPerTeamLead = await pool.query(`
-      SELECT t.name AS teamLead,
-             COUNT(i.id) AS internCount
+    /* -------- INTERN COUNT PER TEAM LEAD -------- */
+    const internsPerTeamLeadQuery = pool.query(`
+      SELECT 
+        t.id,
+        t.name AS teamLead,
+        COUNT(i.id) AS internCount
       FROM users t
       LEFT JOIN users i
-      ON i.team_lead_id = t.id AND i.role='INTERN'
+        ON i.team_lead_id = t.id AND i.role='INTERN'
       WHERE t.role='TEAM_LEAD'
-      GROUP BY t.name
+      GROUP BY t.id
+      ORDER BY t.name
     `);
 
-    const delayedProjects = await pool.query(`
+    /* -------- PROJECT STATS -------- */
+    const projectStatsQuery = pool.query(`
+      SELECT 
+        COUNT(*) FILTER (WHERE status='Ongoing') AS active,
+        COUNT(*) FILTER (WHERE status='Completed') AS completed
+      FROM projects
+    `);
+
+    /* -------- DELAYED PROJECTS -------- */
+    const delayedProjectsQuery = pool.query(`
       SELECT COUNT(*)
       FROM projects
       WHERE deadline < CURRENT_DATE
       AND status='Ongoing'
     `);
 
-    const activeProjects = await pool.query(`
+    /* 🔥 -------- DELAYED SUBMISSIONS -------- */
+    const delayedSubmissionsQuery = pool.query(`
       SELECT COUNT(*)
-      FROM projects
-      WHERE status='Ongoing'
+      FROM submissions s
+      JOIN projects p ON s.project_id = p.id
+      WHERE s.status = 'Pending'
+      AND p.deadline < CURRENT_DATE
     `);
 
-    const completedProjects = await pool.query(`
-      SELECT COUNT(*)
-      FROM projects
-      WHERE status='Completed'
+    /* -------- SUBMISSION TRACKING -------- */
+    const submissionTrackingQuery = pool.query(`
+      SELECT 
+        i.id,
+        i.name AS intern,
+        COUNT(s.id) AS totalSubmissions,
+        COUNT(s.id) FILTER (WHERE s.status='Approved') AS approved,
+        COUNT(s.id) FILTER (WHERE s.status='Rejected') AS rejected,
+        COUNT(s.id) FILTER (WHERE s.status='Pending') AS pending
+      FROM users i
+      LEFT JOIN submissions s
+        ON s.intern_id = i.id
+      WHERE i.role='INTERN'
+      GROUP BY i.id
+      ORDER BY i.name
     `);
 
+    /* -------- EXECUTE ALL QUERIES IN PARALLEL -------- */
+    const [
+      totalInterns,
+      internsPerTeamLead,
+      projectStats,
+      delayedProjects,
+      delayedSubmissions,
+      submissionTracking
+    ] = await Promise.all([
+      totalInternsQuery,
+      internsPerTeamLeadQuery,
+      projectStatsQuery,
+      delayedProjectsQuery,
+      delayedSubmissionsQuery, // 🔥 added here
+      submissionTrackingQuery
+    ]);
+
+    /* -------- FINAL RESPONSE -------- */
     res.json({
       totals: {
-        interns: totalInterns.rows[0].count,
-        activeProjects: activeProjects.rows[0].count,
-        completedProjects: completedProjects.rows[0].count,
-        delayedProjects: delayedProjects.rows[0].count
+        interns: parseInt(totalInterns.rows[0].count),
+        activeProjects: parseInt(projectStats.rows[0].active),
+        completedProjects: parseInt(projectStats.rows[0].completed),
+        delayedProjects: parseInt(delayedProjects.rows[0].count),
+        delayedSubmissions: parseInt(delayedSubmissions.rows[0].count) // 🔥 added here
       },
-      internsPerTeamLead: internsPerTeamLead.rows
+      internsPerTeamLead: internsPerTeamLead.rows,
+      submissionTracking: submissionTracking.rows
     });
 
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Analytics error" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "HR Analytics Dashboard error" });
   }
 };
