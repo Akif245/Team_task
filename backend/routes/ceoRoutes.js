@@ -1,15 +1,16 @@
+
 import express from "express";
-import authenticate from "../middleware/authMiddleware.js";
-import authorizeRoles from "../middleware/roleMiddleware.js";
-import { getAnalytics } from "../controllers/ceoController.js";
+import auth from "../middleware/authMiddleware.js";
+import {
+  assignTeamLead,
+  getCompanyAnalytics,
+  getAllProjectProgress
+} from "../controllers/ceoController.js";
 
 const router = express.Router();
 
-router.get(
-  "/analytics",
-  authenticate,
-  authorizeRoles("CEO"),
-  getAnalytics
-);
+router.put("/assign-teamlead", auth, assignTeamLead);
+router.get("/analytics", auth, getCompanyAnalytics);
+router.get("/project-progress", auth, getAllProjectProgress);
 
 export default router;

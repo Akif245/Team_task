@@ -1,88 +1,155 @@
+
 import bcrypt from "bcryptjs";
-import {pool} from "../config/db.js";
+import { pool } from "../config/db.js";
 
-
-
-// CREATE INTERN
+/* =========================
+   CREATE INTERN
+========================= */
 export const createIntern = async (req, res) => {
- try {
+  try {
+    if (req.user.role !== "HR") {
+      return res.status(403).json({ message: "Access denied" });
+    }
 
-  const { name, email, password } = req.body;
+    const { name, email, password } = req.body;
 
-  const hash = await bcrypt.hash(password, 10);
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: "All fields required" });
+    }
 
-  await pool.query(
-   "INSERT INTO users(name,email,password,role) VALUES($1,$2,$3,$4)",
-   [name, email, hash, "intern"]
-  );
+    const existing = await pool.query(
+      "SELECT id FROM users WHERE email=$1",
+      [email]
+    );
 
-  res.json("Intern created");
+    if (existing.rows.length) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
 
- } catch (err) {
-  res.status(500).json(err.message);
- }
+    const hash = await bcrypt.hash(password, 10);
+
+    const result = await pool.query(
+      `INSERT INTO users (name,email,password,role)
+       VALUES ($1,$2,$3,'INTERN')
+       RETURNING id,name,email,role`,
+      [name, email, hash]
+    );
+
+    res.status(201).json({
+      message: "Intern created successfully",
+      intern: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Create intern error" });
+  }
 };
 
-
-// ASSIGN INTERN → TEAM LEAD
+/* =========================
+   ASSIGN / REASSIGN INTERN
+========================= */
 export const assignIntern = async (req, res) => {
- try {
+  try {
+    if (req.user.role !== "HR") {
+      return res.status(403).json({ message: "Access denied" });
+    }
 
-  const { internId, teamLeadId } = req.body;
+    const { internId, teamLeadId } = req.body;
 
-  await pool.query(
-   "UPDATE users SET team_lead_id=$1 WHERE id=$2",
-   [teamLeadId, internId]
-  );
+    if (!internId || !teamLeadId) {
+      return res.status(400).json({ message: "internId and teamLeadId required" });
+    }
 
-  res.json("Assigned successfully");
+    const intern = await pool.query(
+      "SELECT id FROM users WHERE id=$1 AND role='INTERN'",
+      [internId]
+    );
 
- } catch (err) {
-  res.status(500).json(err.message);
- }
+    if (!intern.rows.length) {
+      return res.status(404).json({ message: "Intern not found" });
+    }
+
+    const teamLead = await pool.query(
+      "SELECT id FROM users WHERE id=$1 AND role='TEAM_LEAD'",
+      [teamLeadId]
+    );
+
+    if (!teamLead.rows.length) {
+      return res.status(404).json({ message: "Team Lead not found" });
+    }
+
+    await pool.query(
+      "UPDATE users SET team_lead_id=$1 WHERE id=$2",
+      [teamLeadId, internId]
+    );
+
+    res.json({
+      message: "Intern assigned successfully",
+      internId,
+      teamLeadId
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Assign error" });
+  }
 };
 
+/* =========================
+   HR ANALYTICS
+========================= */
+export const getAnalytics = async (req, res) => {
+  try {
+    if (req.user.role !== "HR") {
+      return res.status(403).json({ message: "Access denied" });
+    }
 
-// REASSIGN INTERN
-export const reassignIntern = async (req, res) => {
- try {
+    const totalInterns = await pool.query(
+      "SELECT COUNT(*) FROM users WHERE role='INTERN'"
+    );
 
-  const { internId, newTeamLeadId } = req.body;
+    const internsPerTeamLead = await pool.query(`
+      SELECT t.name AS teamLead,
+             COUNT(i.id) AS internCount
+      FROM users t
+      LEFT JOIN users i
+      ON i.team_lead_id = t.id AND i.role='INTERN'
+      WHERE t.role='TEAM_LEAD'
+      GROUP BY t.name
+    `);
 
-  await pool.query(
-   "UPDATE users SET team_lead_id=$1 WHERE id=$2",
-   [newTeamLeadId, internId]
-  );
+    const delayedProjects = await pool.query(`
+      SELECT COUNT(*)
+      FROM projects
+      WHERE deadline < CURRENT_DATE
+      AND status='Ongoing'
+    `);
 
-  res.json("Team lead changed");
+    const activeProjects = await pool.query(`
+      SELECT COUNT(*)
+      FROM projects
+      WHERE status='Ongoing'
+    `);
 
- } catch (err) {
-  res.status(500).json(err.message);
- }
-};
+    const completedProjects = await pool.query(`
+      SELECT COUNT(*)
+      FROM projects
+      WHERE status='Completed'
+    `);
 
+    res.json({
+      totals: {
+        interns: totalInterns.rows[0].count,
+        activeProjects: activeProjects.rows[0].count,
+        completedProjects: completedProjects.rows[0].count,
+        delayedProjects: delayedProjects.rows[0].count
+      },
+      internsPerTeamLead: internsPerTeamLead.rows
+    });
 
-// HR ANALYTICS
-export const analytics = async (req, res) => {
- try {
-
-  const result = await pool.query(`
-   SELECT 
-     i.name AS intern,
-     t.name AS teamlead,
-     r.attendance,
-     r.tasks_completed,
-     r.remarks,
-     r.created_at
-   FROM reports r
-   JOIN users i ON r.intern_id=i.id
-   LEFT JOIN users t ON r.team_lead_id=t.id
-   ORDER BY r.created_at DESC
-  `);
-
-  res.json(result.rows);
-
- } catch (err) {
-  res.status(500).json(err.message);
- }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Analytics error" });
+  }
 };

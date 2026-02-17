@@ -1,25 +1,20 @@
+
 import express from "express";
-import authenticate from "../middleware/authMiddleware.js";
-import authorizeRoles from "../middleware/roleMiddleware.js";
+import auth from "../middleware/authMiddleware.js";
 import {
   createNewProject,
+  getMyInterns,
+  getMyProjects,
+  getProjectSubmissions,
   reviewWork
 } from "../controllers/teamLeadController.js";
 
 const router = express.Router();
 
-router.post(
-  "/create-project",
-  authenticate,
-  authorizeRoles("TEAM_LEAD"),
-  createNewProject
-);
-
-router.put(
-  "/review/:id",
-  authenticate,
-  authorizeRoles("TEAM_LEAD"),
-  reviewWork
-);
+router.post("/create-project", auth, createNewProject);
+router.get("/my-interns", auth, getMyInterns);
+router.get("/my-projects", auth, getMyProjects);
+router.get("/project-submissions/:projectId", auth, getProjectSubmissions);
+router.put("/review/:submissionId", auth, reviewWork);
 
 export default router;

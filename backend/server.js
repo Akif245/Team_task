@@ -6,9 +6,14 @@ import { pool } from "./config/db.js";
 
 import userRoutes from "./routes/userRoutes.js";
 import authRoutes from "./routes/auth.js";
-import projectRoutes from "./routes/projects.js";
-import submissionRoutes from "./routes/submissions.js";
+import projectRoutes from "./routes/projectsRoutes.js";
+import submissionRoutes from "./routes/submissionsRoutes.js";
 import hrRoutes from "./routes/hrRoutes.js";
+import teamLeadRoutes from "./routes/teamLeadRoutes.js";
+import ceoRoutes from "./routes/ceoRoutes.js";
+import internRoutes from "./routes/internRoutes.js";
+
+
 
 dotenv.config();
 
@@ -22,5 +27,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/submissions", submissionRoutes);
 app.use("/api/hr", hrRoutes);
+app.use("/api/ceo", ceoRoutes)
 
+app.use("/api/teamlead", teamLeadRoutes);
+app.use("/api/intern", internRoutes);
 app.listen(5000, () => console.log("Backend running on port 5000"));
