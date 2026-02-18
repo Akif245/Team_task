@@ -12,7 +12,7 @@ import hrRoutes from "./routes/hrRoutes.js";
 import teamLeadRoutes from "./routes/teamLeadRoutes.js";
 import ceoRoutes from "./routes/ceoRoutes.js";
 import internRoutes from "./routes/internRoutes.js";
-
+import notificationRoutes from "./routes/notificationRoutes.js";
 
 
 dotenv.config();
@@ -31,4 +31,6 @@ app.use("/api/ceo", ceoRoutes)
 
 app.use("/api/teamlead", teamLeadRoutes);
 app.use("/api/intern", internRoutes);
+app.use("/api/notifications", notificationRoutes);
+
 app.listen(5000, () => console.log("Backend running on port 5000"));

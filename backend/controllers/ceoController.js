@@ -113,6 +113,10 @@ export const getCEOAnalyticsDashboard = async (req, res) => {
       "SELECT COUNT(*) FROM submissions WHERE status='Approved'"
     );
 
+    const onTimeSubmissionsQuery = pool.query(
+      "SELECT COUNT(*) FROM submissions WHERE is_late = false"
+    );
+
     /* -------- DAILY TREND (Last 7 days) -------- */
     const dailyTrendQuery = pool.query(`
       SELECT 
@@ -156,24 +160,50 @@ export const getCEOAnalyticsDashboard = async (req, res) => {
       ORDER BY tl.name
     `);
 
+    
+    /* -------- PROJECT COMPLETION PERCENTAGE -------- */
+    const projectCompletionQuery = pool.query(`
+      SELECT 
+        p.id,
+        p.title,
+        COUNT(s.id) AS totalSubmissions,
+        SUM(CASE WHEN s.status='Approved' THEN 1 ELSE 0 END) AS approved,
+        CASE 
+          WHEN COUNT(s.id) = 0 THEN 0
+          ELSE ROUND(
+            (SUM(CASE WHEN s.status='Approved' THEN 1 ELSE 0 END)::decimal 
+            / COUNT(s.id)) * 100
+          )
+        END AS completionPercentage
+      FROM projects p
+      LEFT JOIN submissions s ON s.project_id = p.id
+      GROUP BY p.id
+      ORDER BY p.id
+    `);
+
     const [
       totalInterns,
       totalProjects,
       projectStats,
       totalSubmissions,
       approvedSubmissions,
+      onTimeSubmissions,
       dailyTrend,
       weeklyTrend,
-      teamPerformance
+      teamPerformance,
+      projectCompletion
     ] = await Promise.all([
       totalInternsQuery,
       totalProjectsQuery,
       projectStatsQuery,
       totalSubmissionsQuery,
       approvedSubmissionsQuery,
+      onTimeSubmissionsQuery,
       dailyTrendQuery,
       weeklyTrendQuery,
-      teamPerformanceQuery
+      teamPerformanceQuery,
+      projectCompletionQuery
+
     ]);
 
     /* ===============================
@@ -187,6 +217,7 @@ export const getCEOAnalyticsDashboard = async (req, res) => {
 
     const submissions = parseInt(totalSubmissions.rows[0].count);
     const approved = parseInt(approvedSubmissions.rows[0].count);
+    const onTime = parseInt(onTimeSubmissions.rows[0].count);
 
     const projectCompletionRate =
       projects === 0 ? 0 : Math.round((completedProjects / projects) * 100);
@@ -194,15 +225,22 @@ export const getCEOAnalyticsDashboard = async (req, res) => {
     const submissionApprovalRate =
       submissions === 0 ? 0 : Math.round((approved / submissions) * 100);
 
-    /* -------- PRODUCTIVITY SCORE --------
-       Formula example:
-       60% weight → approval rate
-       40% weight → project completion
+    /* -------- REAL PRODUCTIVITY SCORE --------
+       50% Approval Rate
+       30% On-time Submission Rate
+       20% Project Completion Rate
     */
-    const productivityScore = Math.round(
-      submissionApprovalRate * 0.6 +
-      projectCompletionRate * 0.4
-    );
+
+    let productivityScore = 0;
+
+    if (submissions > 0 && projects > 0) {
+      productivityScore =
+        ( (approved / submissions) * 50 ) +
+        ( (onTime / submissions) * 30 ) +
+        ( (completedProjects / projects) * 20 );
+    }
+
+    productivityScore = Math.round(productivityScore);
 
     /* ===============================
        RESPONSE
@@ -229,6 +267,7 @@ export const getCEOAnalyticsDashboard = async (req, res) => {
         completionPercentage: projectCompletionRate,
         productivityScore
       },
+      projectCompletion: projectCompletion.rows,  // 🔥 NEW FEATURE
 
       teamPerformance: teamPerformance.rows
     });

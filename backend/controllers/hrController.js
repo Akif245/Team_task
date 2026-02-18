@@ -140,14 +140,23 @@ export const getHRAnalyticsDashboard = async (req, res) => {
       AND status='Ongoing'
     `);
 
-    /* 🔥 -------- DELAYED SUBMISSIONS -------- */
-    const delayedSubmissionsQuery = pool.query(`
-      SELECT COUNT(*)
-      FROM submissions s
-      JOIN projects p ON s.project_id = p.id
-      WHERE s.status = 'Pending'
-      AND p.deadline < CURRENT_DATE
-    `);
+    // /* 🔥 -------- DELAYED SUBMISSIONS -------- */
+    // const delayedSubmissionsQuery = pool.query(`
+    //   SELECT COUNT(*)
+    //   FROM submissions s
+    //   JOIN projects p ON s.project_id = p.id
+    //   WHERE s.status = 'Pending'
+    //   AND p.deadline < CURRENT_DATE
+    // `);
+
+    /* -------- REAL DELAYED SUBMISSIONS (Deadline vs Submitted_at) -------- */
+const lateSubmissionsQuery = pool.query(`
+  SELECT COUNT(*)
+  FROM submissions s
+  JOIN projects p ON s.project_id = p.id
+  WHERE s.submitted_at > p.deadline
+`);
+
 
     /* -------- SUBMISSION TRACKING -------- */
     const submissionTrackingQuery = pool.query(`
@@ -166,21 +175,39 @@ export const getHRAnalyticsDashboard = async (req, res) => {
       ORDER BY i.name
     `);
 
+    /* -------- LATE SUBMISSION TRACKING PER INTERN -------- */
+    const lateSubmissionTrackingQuery = pool.query(`
+    SELECT 
+    i.id,
+    i.name AS intern,
+    COUNT(s.id) AS totalSubmissions,
+    COUNT(s.id) FILTER (WHERE s.submitted_at > p.deadline) AS lateSubmissions
+  FROM users i
+  LEFT JOIN submissions s ON s.intern_id = i.id
+  LEFT JOIN projects p ON s.project_id = p.id
+  WHERE i.role='INTERN'
+  GROUP BY i.id
+  ORDER BY i.name
+`);
+
+
     /* -------- EXECUTE ALL QUERIES IN PARALLEL -------- */
     const [
       totalInterns,
       internsPerTeamLead,
       projectStats,
       delayedProjects,
-      delayedSubmissions,
-      submissionTracking
+      lateSubmissions,
+      submissionTracking,
+      lateSubmissionTracking
     ] = await Promise.all([
       totalInternsQuery,
       internsPerTeamLeadQuery,
       projectStatsQuery,
       delayedProjectsQuery,
-      delayedSubmissionsQuery, // 🔥 added here
-      submissionTrackingQuery
+      lateSubmissionsQuery,
+      submissionTrackingQuery,
+      lateSubmissionTrackingQuery // 🔥 added here
     ]);
 
     /* -------- FINAL RESPONSE -------- */
@@ -190,10 +217,11 @@ export const getHRAnalyticsDashboard = async (req, res) => {
         activeProjects: parseInt(projectStats.rows[0].active),
         completedProjects: parseInt(projectStats.rows[0].completed),
         delayedProjects: parseInt(delayedProjects.rows[0].count),
-        delayedSubmissions: parseInt(delayedSubmissions.rows[0].count) // 🔥 added here
+        lateSubmissions: parseInt(lateSubmissions.rows[0].count)
       },
       internsPerTeamLead: internsPerTeamLead.rows,
-      submissionTracking: submissionTracking.rows
+      submissionTracking: submissionTracking.rows,
+      lateSubmissionTracking: lateSubmissionTracking.rows
     });
 
   } catch (error) {

@@ -1,25 +1,6 @@
-// import { getProjectsByIntern } from "../models/projectModel.js";
-// import { createSubmission } from "../models/submissionModel.js";
 
-// export const getMyProjects = async (req, res) => {
-//   const result = await getProjectsByIntern(req.user.id);
-//   res.json(result.rows);
-// };
-
-// export const submitWork = async (req, res) => {
-//   const { project_id, title, description } = req.body;
-
-//   await createSubmission(
-//     project_id,
-//     req.user.id,
-//     title,
-//     description,
-//     req.file.path
-//   );
-
-//   res.json({ message: "Submission uploaded", status: "PENDING" });
-// };
 import { pool } from "../config/db.js";
+import { createNotification } from "../utils/notificationService.js";
 
 /* =========================
    GET ASSIGNED PROJECT
@@ -43,54 +24,77 @@ export const getMyProject = async (req, res) => {
   }
 };
 
-/* =========================
-   SUBMIT WEEKLY WORK
-========================= */
+
+
 export const submitWork = async (req, res) => {
   try {
     if (req.user.role !== "INTERN") {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const { title, description, pdf_url } = req.body;
+    const { projectId, title, description } = req.body;
 
-    // Find assigned project
+    if (!req.files || !req.files.pdf) {
+      return res.status(400).json({ message: "PDF is required" });
+    }
+
+    const pdfPath = req.files.pdf[0].filename;
+
+    const additionalDocs = req.files.additionalDocs
+      ? req.files.additionalDocs.map(file => file.filename)
+      : [];
+
+    // Get project deadline
     const project = await pool.query(
-      "SELECT * FROM projects WHERE intern_id=$1",
-      [req.user.id]
+      "SELECT deadline FROM projects WHERE id=$1",
+      [projectId]
     );
 
     if (!project.rows.length) {
-      return res.status(404).json({ message: "No assigned project found" });
+      return res.status(404).json({ message: "Project not found" });
     }
 
-    const projectId = project.rows[0].id;
+    const deadline = project.rows[0].deadline;
+    const today = new Date();
 
-    // Auto increment serial number
-    const serialCheck = await pool.query(
+    const isLate = today > deadline;
+
+    // Serial number auto increment
+    const serialResult = await pool.query(
       "SELECT COUNT(*) FROM submissions WHERE project_id=$1",
       [projectId]
     );
 
-    const serial_no = parseInt(serialCheck.rows[0].count) + 1;
+    const serialNo = parseInt(serialResult.rows[0].count) + 1;
 
     const newSubmission = await pool.query(
       `INSERT INTO submissions
-       (serial_no, intern_id, project_id, title, description, pdf_url, status, submitted_at)
-       VALUES ($1,$2,$3,$4,$5,$6,'Pending',NOW())
+       (project_id, intern_id, title, description, pdf_url, additional_docs, serial_no, status, is_late)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'Pending',$8)
        RETURNING *`,
       [
-        serial_no,
-        req.user.id,
         projectId,
+        req.user.id,
         title,
         description,
-        pdf_url
+        pdfPath,
+        JSON.stringify(additionalDocs),
+        serialNo,
+        isLate
       ]
     );
+    await createNotification(
+  project.team_lead_id,
+  `New submission uploaded by ${req.user.name}`,
+  "SUBMISSION_UPLOADED"
+);
+
+
 
     res.status(201).json({
-      message: "Submission uploaded successfully",
+      message: isLate
+        ? "Submitted (Late Submission)"
+        : "Submitted Successfully",
       submission: newSubmission.rows[0]
     });
 
@@ -99,6 +103,7 @@ export const submitWork = async (req, res) => {
     res.status(500).json({ message: "Submission error" });
   }
 };
+
 
 /* =========================
    VIEW MY SUBMISSIONS
