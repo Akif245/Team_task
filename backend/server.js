@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 import { pool } from "./config/db.js";
+import "./utils/deadlineReminder.js";
 
 import userRoutes from "./routes/userRoutes.js";
 import authRoutes from "./routes/auth.js";

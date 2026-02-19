@@ -226,21 +226,21 @@ export const getCEOAnalyticsDashboard = async (req, res) => {
       submissions === 0 ? 0 : Math.round((approved / submissions) * 100);
 
     /* -------- REAL PRODUCTIVITY SCORE --------
-       50% Approval Rate
-       30% On-time Submission Rate
-       20% Project Completion Rate
-    */
+   50% Approval Rate
+   50% On-time Submission Rate
+*/
 
-    let productivityScore = 0;
+const onTimeRate =
+  submissions === 0 ? 0 : Math.round((onTime / submissions) * 100);
 
-    if (submissions > 0 && projects > 0) {
-      productivityScore =
-        ( (approved / submissions) * 50 ) +
-        ( (onTime / submissions) * 30 ) +
-        ( (completedProjects / projects) * 20 );
-    }
+let productivityScore = 0;
 
-    productivityScore = Math.round(productivityScore);
+if (submissions > 0) {
+  productivityScore = Math.round(
+    (submissionApprovalRate * 0.5) +
+    (onTimeRate * 0.5)
+  );
+}
 
     /* ===============================
        RESPONSE
@@ -264,9 +264,12 @@ export const getCEOAnalyticsDashboard = async (req, res) => {
       },
 
       progressTracking: {
-        completionPercentage: projectCompletionRate,
-        productivityScore
-      },
+  completionPercentage: projectCompletionRate,
+  approvalRate: submissionApprovalRate,
+   onTimeRate: `${onTimeRate}%`,
+  productivityScore
+},
+
       projectCompletion: projectCompletion.rows,  // 🔥 NEW FEATURE
 
       teamPerformance: teamPerformance.rows
